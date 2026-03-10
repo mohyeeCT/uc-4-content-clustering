@@ -222,10 +222,15 @@ st.markdown("---")
 
 section("01 — Upload File")
 st.markdown("**SF Embeddings Export** `required`")
-st.caption("Screaming Frog → Bulk Export → AI Tab → Export  |  Include the Title 1 column for better cluster names")
+st.caption("Screaming Frog → Bulk Export → AI Tab → Export")
 emb_file = st.file_uploader("Drop embeddings file", type=["csv", "xlsx", "xls"], label_visibility="collapsed")
 
+st.markdown("**SF Internal Export** `optional — adds Title 1 for better cluster names`")
+st.caption("Screaming Frog → Internal tab → Export")
+internal_file = st.file_uploader("Drop internal export file", type=["csv", "xlsx", "xls"], label_visibility="collapsed", key="internal_upload")
+
 emb_df = load_file(emb_file)
+internal_df = load_file(internal_file)
 emb_col = None
 
 if emb_df is not None:
@@ -239,13 +244,25 @@ if emb_df is not None:
             mask = mask & ~emb_df['Address'].str.contains(re.escape(pat), na=False)
         emb_df = emb_df[mask].reset_index(drop=True)
 
+        # Merge Title 1 from internal export if provided
+        if internal_df is not None and 'Address' in internal_df.columns:
+            title_candidates = [c for c in internal_df.columns if 'title 1' in c.lower() or c.lower() == 'title 1']
+            if title_candidates:
+                emb_df = emb_df.merge(
+                    internal_df[['Address', title_candidates[0]]].rename(columns={title_candidates[0]: 'Title 1'}),
+                    on='Address', how='left'
+                )
+                st.success(f"✓ Merged Title 1 from internal export — {emb_df['Title 1'].notna().sum():,} pages matched")
+            else:
+                st.warning("Internal export loaded but no 'Title 1' column found.")
+
         emb_col = detect_emb_col(emb_df)
         title_col = next((c for c in emb_df.columns if 'title' in c.lower() and c != emb_col), None)
 
         c1, c2, c3 = st.columns(3)
         c1.success(f"✓ Loaded — {len(emb_df):,} pages")
         c2.info(f"Embedding col: `{emb_col}`" if emb_col else "❌ No embedding column found")
-        c3.info(f"Title col: `{title_col}`" if title_col else "○ No title column (optional)")
+        c3.info(f"Title col: `{title_col}`" if title_col else "○ No title column — cluster names will use URLs")
 
         if emb_col is None:
             st.error("Could not detect the embedding vector column. Check your export.")
