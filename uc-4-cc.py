@@ -222,7 +222,7 @@ st.markdown("---")
 
 section("01 — Upload File")
 st.markdown("**SF Embeddings Export** `required`")
-st.caption("Screaming Frog → Bulk Export → Content → Embeddings Export  |  Include the Title 1 column for better cluster names")
+st.caption("Screaming Frog → Bulk Export → AI Tab → Export  |  Include the Title 1 column for better cluster names")
 emb_file = st.file_uploader("Drop embeddings file", type=["csv", "xlsx", "xls"], label_visibility="collapsed")
 
 emb_df = load_file(emb_file)
