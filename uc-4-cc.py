@@ -220,13 +220,25 @@ st.markdown("# 🗂️ Content Clustering & Outlier Detection")
 st.markdown("Groups every page on your site into named topic clusters and flags pages that do not belong anywhere.")
 st.markdown("---")
 
-section("01 — Upload File")
-st.markdown("**SF Embeddings Export** `required`")
-st.caption("Screaming Frog → Bulk Export → AI Tab → Export  |  Include the Title 1 column for better cluster names")
-emb_file = st.file_uploader("Drop embeddings file", type=["csv", "xlsx", "xls"], label_visibility="collapsed")
+section("01 — Upload Files")
+
+col1, col2 = st.columns(2)
+with col1:
+    st.markdown("**SF Embeddings Export** `required`")
+    st.caption("Screaming Frog → Bulk Export → AI Tab → Export")
+    emb_file = st.file_uploader("Drop embeddings file", type=["csv", "xlsx", "xls"], key="emb", label_visibility="collapsed")
+
+with col2:
+    st.markdown("**Internal Sheet** `optional`")
+    st.caption("Must include Address column. Any of these are auto-detected: Title 1, Clicks, Impressions")
+    internal_file = st.file_uploader("Drop internal sheet", type=["csv", "xlsx", "xls"], key="internal", label_visibility="collapsed")
 
 emb_df = load_file(emb_file)
+internal_df = load_file(internal_file)
 emb_col = None
+title_col = None
+clicks_col = None
+impressions_col = None
 
 if emb_df is not None:
     if 'Address' not in emb_df.columns:
@@ -239,24 +251,31 @@ if emb_df is not None:
             mask = mask & ~emb_df['Address'].str.contains(re.escape(pat), na=False)
         emb_df = emb_df[mask].reset_index(drop=True)
 
+        # Join internal sheet if provided
+        if internal_df is not None and 'Address' in internal_df.columns:
+            extra_cols = [c for c in internal_df.columns if c != 'Address']
+            emb_df = emb_df.merge(internal_df[['Address'] + extra_cols], on='Address', how='left')
+
         emb_col = detect_emb_col(emb_df)
         title_col = next((c for c in emb_df.columns if 'title' in c.lower() and c != emb_col), None)
         clicks_col = next((c for c in emb_df.columns if c.lower() in ['clicks', 'click', 'gsc clicks']), None)
         impressions_col = next((c for c in emb_df.columns if c.lower() in ['impressions', 'impression', 'gsc impressions']), None)
 
         c1, c2, c3 = st.columns(3)
-        c1.success(f"✓ Loaded — {len(emb_df):,} pages")
-        c2.info(f"Embedding col: `{emb_col}`" if emb_col else "❌ No embedding column found")
-        c3.info(f"Title col: `{title_col}`" if title_col else "○ No title column (optional)")
+        c1.success(f"✓ Embeddings — {len(emb_df):,} pages")
+        c2.success(f"✓ Internal sheet — {len(internal_df):,} rows") if internal_df is not None else c2.info("○ Internal sheet — optional")
+        c3.info(f"Embedding col: `{emb_col}`" if emb_col else "❌ No embedding column found")
 
-        if clicks_col or impressions_col:
-            detected_gsc = []
-            if clicks_col: detected_gsc.append(f"Clicks: `{clicks_col}`")
-            if impressions_col: detected_gsc.append(f"Impressions: `{impressions_col}`")
-            st.info("GSC columns detected: " + "  |  ".join(detected_gsc))
+        detected = []
+        if title_col: detected.append(f"Title: `{title_col}`")
+        if clicks_col: detected.append(f"Clicks: `{clicks_col}`")
+        if impressions_col: detected.append(f"Impressions: `{impressions_col}`")
+        if detected:
+            st.info("Detected columns: " + "  |  ".join(detected))
 
         if emb_col is None:
             st.error("Could not detect the embedding vector column. Check your export.")
+
 
 
 # ── RUN ──────────────────────────────────────────────────────────────
