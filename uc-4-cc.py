@@ -260,6 +260,11 @@ if emb_df is not None:
         title_col = next((c for c in emb_df.columns if 'title' in c.lower() and c != emb_col), None)
         clicks_col = next((c for c in emb_df.columns if c.lower() in ['clicks', 'click', 'gsc clicks']), None)
         impressions_col = next((c for c in emb_df.columns if c.lower() in ['impressions', 'impression', 'gsc impressions']), None)
+        position_col = next((c for c in emb_df.columns if c.lower() in ['position', 'avg position', 'average position', 'gsc position']), None)
+        inlinks_col = next((c for c in emb_df.columns if c.lower() in ['inlinks', 'unique inlinks', 'inlink count']), None)
+        wordcount_col = next((c for c in emb_df.columns if c.lower() in ['word count', 'wordcount', 'words']), None)
+        depth_col = next((c for c in emb_df.columns if c.lower() in ['crawl depth', 'depth', 'folder depth']), None)
+        indexability_col = next((c for c in emb_df.columns if c.lower() in ['indexability', 'indexable']), None)
 
         c1, c2, c3 = st.columns(3)
         c1.success(f"✓ Embeddings — {len(emb_df):,} pages")
@@ -270,6 +275,11 @@ if emb_df is not None:
         if title_col: detected.append(f"Title: `{title_col}`")
         if clicks_col: detected.append(f"Clicks: `{clicks_col}`")
         if impressions_col: detected.append(f"Impressions: `{impressions_col}`")
+        if position_col: detected.append(f"Position: `{position_col}`")
+        if inlinks_col: detected.append(f"Inlinks: `{inlinks_col}`")
+        if wordcount_col: detected.append(f"Word Count: `{wordcount_col}`")
+        if depth_col: detected.append(f"Crawl Depth: `{depth_col}`")
+        if indexability_col: detected.append(f"Indexability: `{indexability_col}`")
         if detected:
             st.info("Detected columns: " + "  |  ".join(detected))
 
@@ -377,34 +387,49 @@ if run_btn:
     emb_df['_cluster_name'] = emb_df['_cluster'].map(cluster_names)
 
     # Build output df
-    out_cols = ['Address', '_cluster', '_cluster_name', '_distance', '_outlier']
+    base_cols = ['Address', '_cluster', '_cluster_name', '_distance', '_outlier']
     if title_col:
-        out_cols = ['Address', title_col, '_cluster', '_cluster_name', '_distance', '_outlier']
+        base_cols = ['Address', title_col, '_cluster', '_cluster_name', '_distance', '_outlier']
 
-    gsc_cols = []
-    if clicks_col and clicks_col in emb_df.columns:
-        gsc_cols.append(clicks_col)
-    if impressions_col and impressions_col in emb_df.columns:
-        gsc_cols.append(impressions_col)
-    out_cols = out_cols + gsc_cols
+    enrich_map = [
+        (clicks_col,       'Clicks'),
+        (impressions_col,  'Impressions'),
+        (position_col,     'Avg Position'),
+        (inlinks_col,      'Inlinks'),
+        (wordcount_col,    'Word Count'),
+        (depth_col,        'Crawl Depth'),
+        (indexability_col, 'Indexability'),
+    ]
+    active_enrich = [(src, dst) for src, dst in enrich_map if src and src in emb_df.columns]
 
+    out_cols = base_cols + [src for src, _ in active_enrich]
     out_df = emb_df[out_cols].copy()
+
     rename_map = (['Address'] + ([title_col] if title_col else []) +
                   ['Cluster ID', 'Cluster Name', 'Centroid Distance', 'Is Outlier'] +
-                  (['Clicks'] if clicks_col and clicks_col in emb_df.columns else []) +
-                  (['Impressions'] if impressions_col and impressions_col in emb_df.columns else []))
+                  [dst for _, dst in active_enrich])
     out_df.columns = rename_map
     out_df['Centroid Distance'] = out_df['Centroid Distance'].round(4)
-    if 'Clicks' in out_df.columns:
-        out_df['Clicks'] = pd.to_numeric(out_df['Clicks'], errors='coerce').fillna(0).astype(int)
-    if 'Impressions' in out_df.columns:
-        out_df['Impressions'] = pd.to_numeric(out_df['Impressions'], errors='coerce').fillna(0).astype(int)
+
+    int_cols = ['Clicks', 'Impressions', 'Inlinks', 'Word Count', 'Crawl Depth']
+    float_cols = ['Avg Position']
+    for col in int_cols:
+        if col in out_df.columns:
+            out_df[col] = pd.to_numeric(out_df[col], errors='coerce').fillna(0).astype(int)
+    for col in float_cols:
+        if col in out_df.columns:
+            out_df[col] = pd.to_numeric(out_df[col], errors='coerce').round(1)
 
     st.session_state['uc4_results'] = out_df
     st.session_state['uc4_cluster_names'] = cluster_names
     st.session_state['uc4_k'] = k_final
     st.session_state['uc4_has_clicks'] = 'Clicks' in out_df.columns
     st.session_state['uc4_has_impressions'] = 'Impressions' in out_df.columns
+    st.session_state['uc4_has_position'] = 'Avg Position' in out_df.columns
+    st.session_state['uc4_has_inlinks'] = 'Inlinks' in out_df.columns
+    st.session_state['uc4_has_wordcount'] = 'Word Count' in out_df.columns
+    st.session_state['uc4_has_depth'] = 'Crawl Depth' in out_df.columns
+    st.session_state['uc4_has_indexability'] = 'Indexability' in out_df.columns
 
 
 # ── RESULTS ──────────────────────────────────────────────────────────
@@ -412,8 +437,13 @@ if 'uc4_results' in st.session_state:
     out_df = st.session_state['uc4_results']
     cluster_names = st.session_state['uc4_cluster_names']
     k_final = st.session_state['uc4_k']
-    has_clicks = st.session_state.get('uc4_has_clicks', False)
-    has_impressions = st.session_state.get('uc4_has_impressions', False)
+    has_clicks       = st.session_state.get('uc4_has_clicks', False)
+    has_impressions  = st.session_state.get('uc4_has_impressions', False)
+    has_position     = st.session_state.get('uc4_has_position', False)
+    has_inlinks      = st.session_state.get('uc4_has_inlinks', False)
+    has_wordcount    = st.session_state.get('uc4_has_wordcount', False)
+    has_depth        = st.session_state.get('uc4_has_depth', False)
+    has_indexability = st.session_state.get('uc4_has_indexability', False)
 
     section("03 — Results")
 
@@ -433,10 +463,15 @@ if 'uc4_results' in st.session_state:
 
     with tab1:
         agg_dict = {'Pages': ('Address', 'count'), 'Avg_Distance': ('Centroid Distance', 'mean')}
-        if has_clicks:
-            agg_dict['Total_Clicks'] = ('Clicks', 'sum')
-        if has_impressions:
-            agg_dict['Total_Impressions'] = ('Impressions', 'sum')
+        if has_clicks:       agg_dict['Total_Clicks']      = ('Clicks', 'sum')
+        if has_impressions:  agg_dict['Total_Impressions'] = ('Impressions', 'sum')
+        if has_position:     agg_dict['Avg_Position']      = ('Avg Position', 'mean')
+        if has_inlinks:      agg_dict['Avg_Inlinks']       = ('Inlinks', 'mean')
+        if has_wordcount:    agg_dict['Avg_WordCount']      = ('Word Count', 'mean')
+        if has_depth:        agg_dict['Avg_Depth']          = ('Crawl Depth', 'mean')
+        if has_indexability:
+            out_df['_indexed'] = out_df['Indexability'].str.lower().eq('indexable').astype(int)
+            agg_dict['Pct_Indexed'] = ('_indexed', 'mean')
 
         cluster_summary = (out_df.groupby(['Cluster ID', 'Cluster Name'])
                            .agg(**agg_dict)
@@ -449,20 +484,33 @@ if 'uc4_results' in st.session_state:
             rcols = st.columns(cols_per_row)
             for col_idx, (_, r) in enumerate(row.iterrows()):
                 color = CLUSTER_COLORS[int(r['Cluster ID']) % len(CLUSTER_COLORS)]
-                sample_urls = out_df[out_df['Cluster ID'] == r['Cluster ID']]['Address'].head(2).tolist()
+                sample_urls = out_df[out_df['Cluster ID'] == r['Cluster ID']]['Address'].head(1).tolist()
                 sample = sample_urls[0] if sample_urls else ''
-                gsc_line = ''
-                if has_clicks or has_impressions:
-                    parts = []
-                    if has_clicks: parts.append(f"{int(r.get('Total_Clicks', 0)):,} clicks")
-                    if has_impressions: parts.append(f"{int(r.get('Total_Impressions', 0)):,} impr")
-                    gsc_line = f'<div class="cluster-count" style="color:#58a6ff">{" &nbsp;·&nbsp; ".join(parts)}</div>'
+
+                gsc_parts = []
+                if has_clicks:      gsc_parts.append(f"{int(r.get('Total_Clicks', 0)):,} clicks")
+                if has_impressions: gsc_parts.append(f"{int(r.get('Total_Impressions', 0)):,} impr")
+                if has_position:    gsc_parts.append(f"pos {r.get('Avg_Position', 0):.1f}")
+                gsc_line = (f'<div class="cluster-count" style="color:#58a6ff">{" &nbsp;·&nbsp; ".join(gsc_parts)}</div>'
+                            if gsc_parts else '')
+
+                sf_parts = []
+                if has_inlinks:   sf_parts.append(f"avg {r.get('Avg_Inlinks', 0):.0f} inlinks")
+                if has_wordcount: sf_parts.append(f"avg {r.get('Avg_WordCount', 0):.0f} words")
+                if has_depth:     sf_parts.append(f"depth {r.get('Avg_Depth', 0):.1f}")
+                if has_indexability:
+                    pct = int(r.get('Pct_Indexed', 0) * 100)
+                    sf_parts.append(f"{pct}% indexed")
+                sf_line = (f'<div class="cluster-count" style="color:#3fb950">{" &nbsp;·&nbsp; ".join(sf_parts)}</div>'
+                           if sf_parts else '')
+
                 with rcols[col_idx]:
                     st.markdown(f"""
 <div class="cluster-card" style="border-top: 3px solid {color}">
   <div class="cluster-name">{r['Cluster Name']}</div>
   <div class="cluster-count">{int(r['Pages'])} pages &nbsp;·&nbsp; avg dist {r['Avg_Distance']:.3f}</div>
   {gsc_line}
+  {sf_line}
   <div class="cluster-sample">{sample}</div>
 </div>""", unsafe_allow_html=True)
 
@@ -481,13 +529,18 @@ if 'uc4_results' in st.session_state:
         if len(outlier_df):
             st.caption(f"{len(outlier_df)} pages are significantly distant from their assigned cluster centre.")
             for _, row in outlier_df.head(30).iterrows():
-                title = row.get(title_col, '') if title_col and title_col in row else ''
+                title = row.get('Title 1', row.get(title_col, '')) if title_col else ''
                 label = f"{row['Address']}" + (f"  |  {title}" if title else "")
-                gsc_parts = []
-                if has_clicks: gsc_parts.append(f"Clicks: {int(row.get('Clicks', 0)):,}")
-                if has_impressions: gsc_parts.append(f"Impressions: {int(row.get('Impressions', 0)):,}")
-                gsc_str = ("  &nbsp;·&nbsp;  " + "  &nbsp;·&nbsp;  ".join(gsc_parts)) if gsc_parts else ""
-                st.markdown(f'<div class="outlier-row">{label}<br><span style="color:#8b949e">Cluster: {row["Cluster Name"]} &nbsp;·&nbsp; Distance: {row["Centroid Distance"]:.4f}{gsc_str}</span></div>', unsafe_allow_html=True)
+                meta_parts = [f"Cluster: {row['Cluster Name']}", f"Distance: {row['Centroid Distance']:.4f}"]
+                if has_clicks:       meta_parts.append(f"Clicks: {int(row.get('Clicks', 0)):,}")
+                if has_impressions:  meta_parts.append(f"Impr: {int(row.get('Impressions', 0)):,}")
+                if has_position:     meta_parts.append(f"Pos: {row.get('Avg Position', '')}")
+                if has_inlinks:      meta_parts.append(f"Inlinks: {int(row.get('Inlinks', 0))}")
+                if has_wordcount:    meta_parts.append(f"Words: {int(row.get('Word Count', 0))}")
+                if has_depth:        meta_parts.append(f"Depth: {int(row.get('Crawl Depth', 0))}")
+                if has_indexability: meta_parts.append(f"{row.get('Indexability', '')}")
+                meta_str = "  &nbsp;·&nbsp;  ".join(meta_parts)
+                st.markdown(f'<div class="outlier-row">{label}<br><span style="color:#8b949e">{meta_str}</span></div>', unsafe_allow_html=True)
         else:
             st.success("No outliers detected at the current sensitivity setting.")
 
