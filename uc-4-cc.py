@@ -222,15 +222,10 @@ st.markdown("---")
 
 section("01 — Upload File")
 st.markdown("**SF Embeddings Export** `required`")
-st.caption("Screaming Frog → Bulk Export → AI Tab → Export")
+st.caption("Screaming Frog → Bulk Export → AI Tab → Export  |  Include the Title 1 column for better cluster names")
 emb_file = st.file_uploader("Drop embeddings file", type=["csv", "xlsx", "xls"], label_visibility="collapsed")
 
-st.markdown("**SF Internal Export** `optional — adds Title 1 for better cluster names`")
-st.caption("Screaming Frog → Internal tab → Export")
-internal_file = st.file_uploader("Drop internal export file", type=["csv", "xlsx", "xls"], label_visibility="collapsed", key="internal_upload")
-
 emb_df = load_file(emb_file)
-internal_df = load_file(internal_file)
 emb_col = None
 
 if emb_df is not None:
@@ -244,25 +239,21 @@ if emb_df is not None:
             mask = mask & ~emb_df['Address'].str.contains(re.escape(pat), na=False)
         emb_df = emb_df[mask].reset_index(drop=True)
 
-        # Merge Title 1 from internal export if provided
-        if internal_df is not None and 'Address' in internal_df.columns:
-            title_candidates = [c for c in internal_df.columns if 'title 1' in c.lower() or c.lower() == 'title 1']
-            if title_candidates:
-                emb_df = emb_df.merge(
-                    internal_df[['Address', title_candidates[0]]].rename(columns={title_candidates[0]: 'Title 1'}),
-                    on='Address', how='left'
-                )
-                st.success(f"✓ Merged Title 1 from internal export — {emb_df['Title 1'].notna().sum():,} pages matched")
-            else:
-                st.warning("Internal export loaded but no 'Title 1' column found.")
-
         emb_col = detect_emb_col(emb_df)
         title_col = next((c for c in emb_df.columns if 'title' in c.lower() and c != emb_col), None)
+        clicks_col = next((c for c in emb_df.columns if c.lower() in ['clicks', 'click', 'gsc clicks']), None)
+        impressions_col = next((c for c in emb_df.columns if c.lower() in ['impressions', 'impression', 'gsc impressions']), None)
 
         c1, c2, c3 = st.columns(3)
         c1.success(f"✓ Loaded — {len(emb_df):,} pages")
         c2.info(f"Embedding col: `{emb_col}`" if emb_col else "❌ No embedding column found")
-        c3.info(f"Title col: `{title_col}`" if title_col else "○ No title column — cluster names will use URLs")
+        c3.info(f"Title col: `{title_col}`" if title_col else "○ No title column (optional)")
+
+        if clicks_col or impressions_col:
+            detected_gsc = []
+            if clicks_col: detected_gsc.append(f"Clicks: `{clicks_col}`")
+            if impressions_col: detected_gsc.append(f"Impressions: `{impressions_col}`")
+            st.info("GSC columns detected: " + "  |  ".join(detected_gsc))
 
         if emb_col is None:
             st.error("Could not detect the embedding vector column. Check your export.")
@@ -370,13 +361,31 @@ if run_btn:
     out_cols = ['Address', '_cluster', '_cluster_name', '_distance', '_outlier']
     if title_col:
         out_cols = ['Address', title_col, '_cluster', '_cluster_name', '_distance', '_outlier']
+
+    gsc_cols = []
+    if clicks_col and clicks_col in emb_df.columns:
+        gsc_cols.append(clicks_col)
+    if impressions_col and impressions_col in emb_df.columns:
+        gsc_cols.append(impressions_col)
+    out_cols = out_cols + gsc_cols
+
     out_df = emb_df[out_cols].copy()
-    out_df.columns = ['Address'] + ([title_col] if title_col else []) + ['Cluster ID', 'Cluster Name', 'Centroid Distance', 'Is Outlier']
+    rename_map = (['Address'] + ([title_col] if title_col else []) +
+                  ['Cluster ID', 'Cluster Name', 'Centroid Distance', 'Is Outlier'] +
+                  (['Clicks'] if clicks_col and clicks_col in emb_df.columns else []) +
+                  (['Impressions'] if impressions_col and impressions_col in emb_df.columns else []))
+    out_df.columns = rename_map
     out_df['Centroid Distance'] = out_df['Centroid Distance'].round(4)
+    if 'Clicks' in out_df.columns:
+        out_df['Clicks'] = pd.to_numeric(out_df['Clicks'], errors='coerce').fillna(0).astype(int)
+    if 'Impressions' in out_df.columns:
+        out_df['Impressions'] = pd.to_numeric(out_df['Impressions'], errors='coerce').fillna(0).astype(int)
 
     st.session_state['uc4_results'] = out_df
     st.session_state['uc4_cluster_names'] = cluster_names
     st.session_state['uc4_k'] = k_final
+    st.session_state['uc4_has_clicks'] = 'Clicks' in out_df.columns
+    st.session_state['uc4_has_impressions'] = 'Impressions' in out_df.columns
 
 
 # ── RESULTS ──────────────────────────────────────────────────────────
@@ -384,6 +393,8 @@ if 'uc4_results' in st.session_state:
     out_df = st.session_state['uc4_results']
     cluster_names = st.session_state['uc4_cluster_names']
     k_final = st.session_state['uc4_k']
+    has_clicks = st.session_state.get('uc4_has_clicks', False)
+    has_impressions = st.session_state.get('uc4_has_impressions', False)
 
     section("03 — Results")
 
@@ -402,8 +413,14 @@ if 'uc4_results' in st.session_state:
     tab1, tab2, tab3 = st.tabs(["Cluster Overview", "All Pages", "🚨 Outliers"])
 
     with tab1:
+        agg_dict = {'Pages': ('Address', 'count'), 'Avg_Distance': ('Centroid Distance', 'mean')}
+        if has_clicks:
+            agg_dict['Total_Clicks'] = ('Clicks', 'sum')
+        if has_impressions:
+            agg_dict['Total_Impressions'] = ('Impressions', 'sum')
+
         cluster_summary = (out_df.groupby(['Cluster ID', 'Cluster Name'])
-                           .agg(Pages=('Address', 'count'), Avg_Distance=('Centroid Distance', 'mean'))
+                           .agg(**agg_dict)
                            .reset_index()
                            .sort_values('Pages', ascending=False))
 
@@ -415,11 +432,18 @@ if 'uc4_results' in st.session_state:
                 color = CLUSTER_COLORS[int(r['Cluster ID']) % len(CLUSTER_COLORS)]
                 sample_urls = out_df[out_df['Cluster ID'] == r['Cluster ID']]['Address'].head(2).tolist()
                 sample = sample_urls[0] if sample_urls else ''
+                gsc_line = ''
+                if has_clicks or has_impressions:
+                    parts = []
+                    if has_clicks: parts.append(f"{int(r.get('Total_Clicks', 0)):,} clicks")
+                    if has_impressions: parts.append(f"{int(r.get('Total_Impressions', 0)):,} impr")
+                    gsc_line = f'<div class="cluster-count" style="color:#58a6ff">{" &nbsp;·&nbsp; ".join(parts)}</div>'
                 with rcols[col_idx]:
                     st.markdown(f"""
 <div class="cluster-card" style="border-top: 3px solid {color}">
   <div class="cluster-name">{r['Cluster Name']}</div>
   <div class="cluster-count">{int(r['Pages'])} pages &nbsp;·&nbsp; avg dist {r['Avg_Distance']:.3f}</div>
+  {gsc_line}
   <div class="cluster-sample">{sample}</div>
 </div>""", unsafe_allow_html=True)
 
@@ -440,7 +464,11 @@ if 'uc4_results' in st.session_state:
             for _, row in outlier_df.head(30).iterrows():
                 title = row.get(title_col, '') if title_col and title_col in row else ''
                 label = f"{row['Address']}" + (f"  |  {title}" if title else "")
-                st.markdown(f'<div class="outlier-row">{label}<br><span style="color:#8b949e">Cluster: {row["Cluster Name"]} &nbsp;·&nbsp; Distance: {row["Centroid Distance"]:.4f}</span></div>', unsafe_allow_html=True)
+                gsc_parts = []
+                if has_clicks: gsc_parts.append(f"Clicks: {int(row.get('Clicks', 0)):,}")
+                if has_impressions: gsc_parts.append(f"Impressions: {int(row.get('Impressions', 0)):,}")
+                gsc_str = ("  &nbsp;·&nbsp;  " + "  &nbsp;·&nbsp;  ".join(gsc_parts)) if gsc_parts else ""
+                st.markdown(f'<div class="outlier-row">{label}<br><span style="color:#8b949e">Cluster: {row["Cluster Name"]} &nbsp;·&nbsp; Distance: {row["Centroid Distance"]:.4f}{gsc_str}</span></div>', unsafe_allow_html=True)
         else:
             st.success("No outliers detected at the current sensitivity setting.")
 
