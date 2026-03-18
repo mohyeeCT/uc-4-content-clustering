@@ -6,8 +6,8 @@ import io
 import time
 
 st.set_page_config(
-    page_title="UC4 — Content Clustering",
-    page_icon="🗂️",
+    page_title="UC4 - Content Clustering",
+    
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -184,12 +184,12 @@ CLUSTER_COLORS = [
 # ─── SIDEBAR ────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.markdown("### ⚙️ Configuration")
+    st.markdown("### Configuration")
     st.markdown("---")
 
     provider = st.selectbox("Embedding Provider", ["Gemini", "OpenAI"])
     api_key  = st.text_input("API Key (for cluster naming)", type="password",
-        help="Used to name clusters with plain-English labels. Optional — clusters will still be created without it.")
+        help="Used to name clusters with plain-English labels. Optional - clusters will still be created without it.")
 
     st.markdown("---")
     st.markdown("**Clustering**")
@@ -216,11 +216,10 @@ with st.sidebar:
 
 # ─── MAIN ───────────────────────────────────────────────────────────
 
-st.markdown("# 🗂️ Content Clustering & Outlier Detection")
-st.markdown("Groups every page on your site into named topic clusters and flags pages that do not belong anywhere.")
+st.markdown("# Content Clustering & Outlier Detection")
 st.markdown("---")
 
-section("01 — Upload Files")
+section("01 - Upload Files")
 
 col1, col2 = st.columns(2)
 with col1:
@@ -267,8 +266,8 @@ if emb_df is not None:
         indexability_col = next((c for c in emb_df.columns if c.lower() in ['indexability', 'indexable']), None)
 
         c1, c2, c3 = st.columns(3)
-        c1.success(f"✓ Embeddings — {len(emb_df):,} pages")
-        c2.success(f"✓ Internal sheet — {len(internal_df):,} rows") if internal_df is not None else c2.info("○ Internal sheet — optional")
+        c1.success(f"✓ Embeddings - {len(emb_df):,} pages")
+        c2.success(f"✓ Internal sheet - {len(internal_df):,} rows") if internal_df is not None else c2.info("○ Internal sheet - optional")
         c3.info(f"Embedding col: `{emb_col}`" if emb_col else "❌ No embedding column found")
 
         detected = []
@@ -289,7 +288,7 @@ if emb_df is not None:
 
 
 # ── RUN ──────────────────────────────────────────────────────────────
-section("02 — Run Clustering")
+section("02 - Run Clustering")
 
 ready = emb_df is not None and emb_col is not None
 run_btn = st.button("▶  Run Clustering", disabled=not ready)
@@ -445,7 +444,7 @@ if 'uc4_results' in st.session_state:
     has_depth        = st.session_state.get('uc4_has_depth', False)
     has_indexability = st.session_state.get('uc4_has_indexability', False)
 
-    section("03 — Results")
+    section("03 - Results")
 
     total = len(out_df)
     outliers = out_df['Is Outlier'].sum()
@@ -550,12 +549,12 @@ if 'uc4_results' in st.session_state:
 |---------|--------|
 | Very small clusters (1–3 pages) | Nascent topic worth building out, or off-topic content to prune |
 | Large cluster with no commercial page | Create a hub or service page for that topic |
-| Pages in the wrong cluster | Content drift — page title and body cover different topics |
+| Pages in the wrong cluster | Content drift - page title and body cover different topics |
 | Outlier with traffic | Do NOT prune. Rewrite to align with a core cluster |
 | Outlier with zero traffic (12+ months) | Strong prune candidate. Redirect and remove. |
 """)
 
-    section("04 — Export")
+    section("04 - Export")
     col_dl1, col_dl2 = st.columns(2)
     with col_dl1:
         csv1 = out_df.to_csv(index=False).encode()
@@ -567,4 +566,4 @@ if 'uc4_results' in st.session_state:
         csv2 = outlier_export.to_csv(index=False).encode()
         st.download_button("⬇  content_outliers.csv", data=csv2,
             file_name="content_outliers.csv", mime="text/csv")
-        st.caption("Outlier pages only — prune/rewrite candidates")
+        st.caption("Outlier pages only - prune/rewrite candidates")
