@@ -458,7 +458,7 @@ if 'uc4_results' in st.session_state:
 
     st.markdown("")
 
-    tab1, tab2, tab3 = st.tabs(["Cluster Overview", "All Pages", "🚨 Outliers"])
+    tab1, tab2, tab3 = st.tabs(["Cluster Overview", "All Pages", "Outliers"])
 
     with tab1:
         agg_dict = {'Pages': ('Address', 'count'), 'Avg_Distance': ('Centroid Distance', 'mean')}
@@ -543,7 +543,7 @@ if 'uc4_results' in st.session_state:
         else:
             st.success("No outliers detected at the current sensitivity setting.")
 
-    with st.expander("📋 Cluster action guide"):
+    with st.expander("Cluster action guide"):
         st.markdown("""
 | Finding | Action |
 |---------|--------|
